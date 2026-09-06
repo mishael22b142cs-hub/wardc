@@ -1,5 +1,9 @@
 const { Sequelize } = require('sequelize');
 const dotenv = require('dotenv');
+// Require pg explicitly so Vercel's dependency tracer bundles it — Sequelize
+// loads the dialect via a computed require() that the tracer cannot follow.
+const pg = require('pg');
+require('pg-hstore');
 
 dotenv.config();
 
@@ -18,6 +22,7 @@ const useSsl =
 
 const common = {
     dialect: 'postgres',
+    dialectModule: pg,
     logging: false, // Set to true to see SQL queries
     dialectOptions: useSsl
         ? { ssl: { require: true, rejectUnauthorized: false } }
