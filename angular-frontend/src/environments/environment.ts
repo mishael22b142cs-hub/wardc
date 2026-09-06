@@ -1,6 +1,8 @@
 export const environment = {
   production: false,
   apiUrl: 'http://localhost:5000',
+  // Cloudflare Turnstile site key (empty = widget renders in test mode / skipped)
+  turnstileSiteKey: '',
   firebase: {
     apiKey: "AIzaSyDCZyUMi3PcK56CcIR8FjSKNh4kgdMxepw",
     authDomain: "wardconnect-c4a58.firebaseapp.com",

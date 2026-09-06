@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { TurnstileService, TurnstileHandle } from '../../services/turnstile.service';
 import { MatIconModule } from '@angular/material/icon';
 
 @Component({
@@ -12,7 +13,10 @@ import { MatIconModule } from '@angular/material/icon';
     templateUrl: './signup.component.html',
     styles: []
 })
-export class SignupComponent implements OnInit {
+export class SignupComponent implements OnInit, AfterViewInit {
+    @ViewChild('captchaEl') captchaEl?: ElementRef<HTMLElement>;
+    private captcha?: TurnstileHandle;
+
     signupForm: FormGroup;
     loading = false;
     errorMessage = '';
@@ -25,6 +29,7 @@ export class SignupComponent implements OnInit {
     constructor(
         private fb: FormBuilder,
         private authService: AuthService,
+        private turnstile: TurnstileService,
         private router: Router
     ) {
         this.signupForm = this.fb.group({
@@ -62,32 +67,54 @@ export class SignupComponent implements OnInit {
         }
     }
 
-    ngOnInit() {
-        // No more recaptcha
+    ngOnInit() {}
+
+    ngAfterViewInit() {
+        this.renderCaptcha();
+    }
+
+    private renderCaptcha() {
+        if (this.captchaEl && this.turnstile.enabled && !this.captcha) {
+            this.turnstile.render(this.captchaEl.nativeElement)
+                .then((h) => (this.captcha = h))
+                .catch(() => (this.errorMessage = 'Could not load the CAPTCHA. Refresh and try again.'));
+        }
+    }
+
+    private backToStep1() {
+        this.step = 1;
+        this.captcha = undefined;
+        setTimeout(() => this.renderCaptcha(), 50);
     }
 
     sendOtp() {
         if (this.signupForm.invalid) return;
-        
+
         if (this.signupForm.value.password !== this.signupForm.value.confirm_password) {
             this.errorMessage = "Passwords don't match";
             return;
         }
 
+        const captchaToken = this.captcha?.getResponse() || '';
+        if (this.turnstile.enabled && !captchaToken) {
+            this.errorMessage = 'Please complete the CAPTCHA.';
+            return;
+        }
+
         this.loading = true;
         this.errorMessage = '';
-        
+
         let phone = this.signupForm.value.mobile_number;
         // Strip +91 if it exists so backend gets clean 10-digit number
         if (phone.startsWith('+91')) {
             phone = phone.replace('+91', '');
         }
 
-        this.authService.sendOtp(phone).subscribe({
+        this.authService.sendOtp(phone, captchaToken).subscribe({
             next: (response) => {
                 this.step = 2; // Move to OTP entry screen
                 this.loading = false;
-                // Auto-fill OTP if backend returns it (development fallback)
+                // Auto-fill OTP if backend returns it (no SMS provider configured)
                 if (response.dev_otp) {
                     this.otpCode = response.dev_otp;
                 }
@@ -95,6 +122,7 @@ export class SignupComponent implements OnInit {
             error: (err) => {
                 this.errorMessage = err.error?.message || 'Failed to send OTP. Try again.';
                 this.loading = false;
+                this.captcha?.reset(); // token is single-use
             }
         });
     }
@@ -122,7 +150,7 @@ export class SignupComponent implements OnInit {
                 this.loading = false;
                 this.errorMessage = err.error?.message || 'Signup failed on the server or invalid OTP';
                 if(err.status >= 500) {
-                     this.step = 1; // Go back in case they need to fix form details
+                     this.backToStep1(); // Go back in case they need to fix form details
                 }
             }
         });

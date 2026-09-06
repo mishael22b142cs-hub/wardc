@@ -2,6 +2,9 @@ export const environment = {
   production: true,
   // Backend API base URL (Vercel serverless deployment). Update if the backend project URL changes.
   apiUrl: 'https://wardc-api-mishael.vercel.app',
+  // Cloudflare Turnstile site key (from dash.cloudflare.com → Turnstile).
+  // Empty = CAPTCHA widget is skipped. Set this once the widget is created.
+  turnstileSiteKey: '',
   firebase: {
     apiKey: "AIzaSyDCZyUMi3PcK56CcIR8FjSKNh4kgdMxepw",
     authDomain: "wardconnect-c4a58.firebaseapp.com",

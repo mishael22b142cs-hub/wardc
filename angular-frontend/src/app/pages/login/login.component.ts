@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { TurnstileService, TurnstileHandle } from '../../services/turnstile.service';
 import { MatIconModule } from '@angular/material/icon';
 
 @Component({
@@ -12,7 +13,12 @@ import { MatIconModule } from '@angular/material/icon';
     templateUrl: './login.component.html',
     styles: [] // Using Tailwind in HTML
 })
-export class LoginComponent implements OnInit {
+export class LoginComponent implements OnInit, AfterViewInit {
+    @ViewChild('captchaLogin') captchaLoginEl?: ElementRef<HTMLElement>;
+    @ViewChild('captchaForgot') captchaForgotEl?: ElementRef<HTMLElement>;
+    private captchaLogin?: TurnstileHandle;
+    private captchaForgot?: TurnstileHandle;
+
     loginForm: FormGroup;
     resetForm: FormGroup;
     otpForm: FormGroup;
@@ -30,6 +36,7 @@ export class LoginComponent implements OnInit {
     constructor(
         private fb: FormBuilder,
         private authService: AuthService,
+        private turnstile: TurnstileService,
         private router: Router
     ) {
         this.loginForm = this.fb.group({
@@ -63,10 +70,29 @@ export class LoginComponent implements OnInit {
             this.otpForm.reset();
             this.newPasswordForm.reset();
         }
+        // The captcha lives inside a *ngIf branch that Angular destroys/recreates
+        // on mode change — drop the stale handles and re-render after the DOM updates.
+        this.captchaLogin = undefined;
+        this.captchaForgot = undefined;
+        setTimeout(() => this.renderCaptchas(), 50);
     }
 
-    ngOnInit() {
-        // No more recaptcha!
+    ngOnInit() {}
+
+    ngAfterViewInit() {
+        this.renderCaptchas();
+    }
+
+    private renderCaptchas() {
+        if (!this.turnstile.enabled) return;
+        if (this.captchaLoginEl && !this.captchaLogin) {
+            this.turnstile.render(this.captchaLoginEl.nativeElement)
+                .then((h) => (this.captchaLogin = h)).catch(() => {});
+        }
+        if (this.captchaForgotEl && !this.captchaForgot) {
+            this.turnstile.render(this.captchaForgotEl.nativeElement)
+                .then((h) => (this.captchaForgot = h)).catch(() => {});
+        }
     }
 
     // onSubmit() {
@@ -90,23 +116,29 @@ export class LoginComponent implements OnInit {
 
     sendOtp() {
         if (this.loginForm.invalid) return;
-        
+
+        const captchaToken = this.captchaLogin?.getResponse() || '';
+        if (this.turnstile.enabled && !captchaToken) {
+            this.errorMessage = 'Please complete the CAPTCHA.';
+            return;
+        }
+
         this.loading = true;
         this.errorMessage = '';
-        
+
         let phone = this.loginForm.value.mobile_number;
-        // Don't prepend +91 manually if we are changing back to traditional, 
+        // Don't prepend +91 manually if we are changing back to traditional,
         // string based OTP unless the backend specifically expects it.
         // Fast2SMS expects 10 digits without +91.
         if (phone.startsWith('+91')) {
             phone = phone.replace('+91', '');
         }
 
-        this.authService.sendOtp(phone).subscribe({
+        this.authService.sendOtp(phone, captchaToken).subscribe({
             next: (response) => {
                 this.step = 2; // Move to OTP entry screen
                 this.loading = false;
-                // Auto-fill OTP if backend returns it (development fallback)
+                // Auto-fill OTP if backend returns it (no SMS provider configured)
                 if (response.dev_otp) {
                     this.otpCode = response.dev_otp;
                 }
@@ -114,6 +146,7 @@ export class LoginComponent implements OnInit {
             error: (err) => {
                 this.errorMessage = err.error?.message || 'Failed to send OTP. Try again.';
                 this.loading = false;
+                this.captchaLogin?.reset();
             }
         });
     }
@@ -142,7 +175,9 @@ export class LoginComponent implements OnInit {
                 this.errorMessage = err.error?.message || 'Login failed on the server or Invalid OTP';
                 // Only go back to step 1 if it's a structural error (not just a bad OTP)
                 if (err.status >= 500) {
-                     this.step = 1; 
+                     this.step = 1;
+                     this.captchaLogin = undefined;
+                     setTimeout(() => this.renderCaptchas(), 50);
                 }
             }
         });
@@ -150,23 +185,33 @@ export class LoginComponent implements OnInit {
 
     onRequestOtp() {
         if (this.resetForm.valid) {
+            const captchaToken = this.captchaForgot?.getResponse() || '';
+            if (this.turnstile.enabled && !captchaToken) {
+                this.errorMessage = 'Please complete the CAPTCHA.';
+                return;
+            }
+
             this.loading = true;
             this.errorMessage = '';
-            
-            // Check if user exists before sending OTP
-            this.authService.sendOtp(this.resetForm.value).subscribe({
+
+            let phone = this.resetForm.value.mobile_number;
+            if (typeof phone === 'string' && phone.startsWith('+91')) {
+                phone = phone.replace('+91', '');
+            }
+
+            this.authService.sendOtp(phone, captchaToken).subscribe({
                 next: (res) => {
                     this.loading = false;
                     this.successMessage = 'OTP sent to your mobile number.';
-                    // In development/test mode, the OTP is returned in the response
-                    if (res.otp_debug) {
-                        console.log('Test OTP:', res.otp_debug);
+                    if (res.dev_otp) {
+                        this.otpForm.patchValue({ otp: res.dev_otp });
                     }
                     this.setMode('forgot_step_2');
                 },
                 error: (err) => {
                     this.loading = false;
                     this.errorMessage = err.error?.message || 'Failed to send OTP';
+                    this.captchaForgot?.reset();
                 }
             });
         }

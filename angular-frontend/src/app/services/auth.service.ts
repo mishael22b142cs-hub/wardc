@@ -17,8 +17,11 @@ export class AuthService {
         private router: Router
     ) { }
 
-    sendOtp(phoneNumber: string): Observable<any> {
-        return this.http.post(`${this.apiUrl}/send-otp`, { mobile_number: phoneNumber });
+    sendOtp(phoneNumber: string, captchaToken?: string): Observable<any> {
+        return this.http.post(`${this.apiUrl}/send-otp`, {
+            mobile_number: phoneNumber,
+            captchaToken
+        });
     }
 
     // --- Backend API Methods ---
