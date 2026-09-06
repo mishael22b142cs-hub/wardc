@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable, BehaviorSubject, map } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { Complaint, ComplaintStatus, ComplaintData, ComplaintCategory } from '../models/complaint.model';
+import { environment } from '@environments/environment';
 
 @Injectable({
   providedIn: 'root'
@@ -9,7 +10,7 @@ import { Complaint, ComplaintStatus, ComplaintData, ComplaintCategory } from '..
 export class ComplaintService {
   private complaintsSubject = new BehaviorSubject<Complaint[]>([]);
   public complaints$ = this.complaintsSubject.asObservable();
-  private apiUrl = 'http://localhost:5000/api/waste/complaints';
+  private apiUrl = `${environment.apiUrl}/api/waste/complaints`;
 
   constructor(private http: HttpClient) {}
 

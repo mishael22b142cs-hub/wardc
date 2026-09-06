@@ -5,12 +5,13 @@ import { KudumbashreeMeeting } from '../models/meeting';
 import { Loan } from '../models/loan';
 import { Attendance } from '../models/attendance';
 import { FinancialTransaction, FinancialReport } from '../models/financial';
+import { environment } from '@environments/environment';
 @Injectable({
   providedIn: 'root'
 })
 export class ApiService {
   private http = inject(HttpClient);
-  private baseUrl = 'http://localhost:5000/api';
+  private baseUrl = `${environment.apiUrl}/api`;
 
   // Meeting minutes endpoints
   recordMeetingAudio(meetingId: string, audioBlob: Blob, transcript: string): Observable<any> {

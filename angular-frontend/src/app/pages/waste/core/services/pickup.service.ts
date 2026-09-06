@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
 import { Observable, BehaviorSubject, map } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
-import { 
-  PickupRequest, 
+import { environment } from '@environments/environment';
+import {
+  PickupRequest,
   PickupType, 
   PickupStatus, 
   SchedulePickupData, 
@@ -16,7 +17,7 @@ import {
 export class PickupService {
   private pickupsSubject = new BehaviorSubject<PickupRequest[]>([]);
   public pickups$ = this.pickupsSubject.asObservable();
-  private apiUrl = 'http://localhost:5000/api/waste/pickups';
+  private apiUrl = `${environment.apiUrl}/api/waste/pickups`;
 
   constructor(private http: HttpClient) {}
 
@@ -41,7 +42,7 @@ export class PickupService {
   }
 
   getAvailableHouseNumbers(): Observable<string[]> {
-    return this.http.get<string[]>('http://localhost:5000/api/users/house-numbers');
+    return this.http.get<string[]>(`${environment.apiUrl}/api/users/house-numbers`);
   }
 
   schedulePickup(userId: string, userName: string, data: SchedulePickupData): Observable<PickupRequest> {

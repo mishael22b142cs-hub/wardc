@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { HealthService } from '../../../services/health.service';
 import { ToastService } from '../../../services/toast.service';
+import { environment } from '@environments/environment';
 
 @Component({
   selector: 'app-health-record-vault',
@@ -92,7 +93,7 @@ export class HealthRecordVaultComponent implements OnInit {
   toast = inject(ToastService);
 
   records: any[] = [];
-  baseUrl = 'http://localhost:5000';
+  baseUrl = environment.apiUrl;
   isUploading = false;
   isDeleting: string | null = null;
 

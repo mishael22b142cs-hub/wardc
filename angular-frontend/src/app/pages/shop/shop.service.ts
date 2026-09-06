@@ -1,6 +1,7 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, tap } from 'rxjs';
+import { environment } from '@environments/environment';
 // import { environment } from '../../../environments/environment';
 
 export interface Product {
@@ -53,7 +54,7 @@ export interface WishlistItem {
 export class ShopService {
   private http = inject(HttpClient);
   // private apiUrl = `${environment.apiUrl}/shop`; // Assuming environment is set
-  private apiUrl = 'http://localhost:5000/api/shop'; // Hardcoded for now if needed
+  private apiUrl = `${environment.apiUrl}/api/shop`; // Hardcoded for now if needed
 
   // Mock data removed in favor of backend
 

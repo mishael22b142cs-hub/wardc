@@ -6,13 +6,14 @@ import { DashboardStats, MemberDashboard, FinancialSummary, Activity } from '../
 import { User, UserRole } from '../models/user';
 import { Loan, LoanStatus } from '../models/loan';
 import { KudumbashreeMeeting } from '../models/meeting';
+import { environment } from '@environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class DashboardService {
   private http = inject(HttpClient);
-  private apiUrl = 'http://localhost:5000/api'; // Base API URL
+  private apiUrl = `${environment.apiUrl}/api`; // Base API URL
 
   constructor() { }
 
