@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const { calculateCompletion } = require('./user.controller');
+const { verifyCaptcha } = require('../services/captcha');
 
 const generateToken = (user) => {
     return jwt.sign(
@@ -29,8 +30,15 @@ const verifyOtp = async (mobile_number, otp) => {
 
 exports.sendOtp = async (req, res) => {
     try {
-        const { mobile_number } = req.body;
+        const { mobile_number, captchaToken } = req.body;
         if (!mobile_number) return res.status(400).json({ message: 'Mobile number is required.' });
+
+        // Bot protection (Cloudflare Turnstile). Skipped when no secret is configured.
+        const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip;
+        const captcha = await verifyCaptcha(captchaToken, clientIp);
+        if (!captcha.ok) {
+            return res.status(400).json({ message: 'CAPTCHA verification failed. Please try again.' });
+        }
 
         // Generate a 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -78,10 +86,13 @@ exports.sendOtp = async (req, res) => {
             }
         }
 
-        // Fallback: return success with dev_otp so frontend can still work
+        // If no SMS provider is configured, return the OTP in the response so the
+        // frontend can auto-fill it. Once FAST2SMS_API_KEY is set this stops.
         res.json({
-            message: `OTP generated. Check backend terminal for the code.`,
-            dev_otp: process.env.NODE_ENV === 'production' ? undefined : otp
+            message: process.env.FAST2SMS_API_KEY
+                ? 'OTP sent.'
+                : 'OTP generated (no SMS provider configured — returned in response).',
+            dev_otp: process.env.FAST2SMS_API_KEY ? undefined : otp
         });
     } catch (error) {
         console.error("Send OTP Error:", error.response?.data || error.message);
