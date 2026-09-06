@@ -3,28 +3,12 @@ const router = express.Router();
 const healthController = require('../controllers/healthController');
 const { authenticate } = require('../middleware/auth'); // Assuming this exists
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
-// Create uploads directory specifically for health records
-const uploadDir = path.join(__dirname, '../../uploads/health-records');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure Multer storage
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, uploadDir);
-    },
-    filename: function (req, file, cb) {
-        // Prevent collisions with timestamp prefix
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + '-' + file.originalname.replace(/\s+/g, '_'));
-    }
+// In-memory upload; the buffer is pushed to Vercel Blob in the controller.
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 } // 25MB
 });
-
-const upload = multer({ storage: storage });
 
 // Apply auth middleware to all routes
 router.use(authenticate);

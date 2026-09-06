@@ -1,25 +1,10 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
-// --- Disk Storage (For Products) ---
-const uploadDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
+// All uploads use in-memory storage; the buffer is streamed to Vercel Blob
+// by src/services/storage.js. (Disk storage does not survive on serverless.)
+const memoryStorage = multer.memoryStorage();
 
-const diskStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-const diskFileFilter = (req, file, cb) => {
-    // Accept images only for disk upload
+const imageFileFilter = (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
         cb(null, true);
     } else {
@@ -27,22 +12,20 @@ const diskFileFilter = (req, file, cb) => {
     }
 };
 
+// For product images (kept name `uploadDisk` for backwards compatibility).
 const uploadDisk = multer({
-    storage: diskStorage,
-    fileFilter: diskFileFilter,
-    limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+    storage: memoryStorage,
+    fileFilter: imageFileFilter,
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 });
 
-// --- Memory Storage (For Audio/Meeting Minutes) ---
-const memoryStorage = multer.memoryStorage();
-const uploadMemory = multer({ 
+// For audio / meeting minutes.
+const uploadMemory = multer({
     storage: memoryStorage,
-    limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit for audio
+    limits: { fileSize: 100 * 1024 * 1024 } // 100MB
 });
 
 module.exports = {
     uploadDisk,
     uploadMemory
 };
-
-

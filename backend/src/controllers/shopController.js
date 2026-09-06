@@ -5,6 +5,7 @@ const Order = require('../models/Order');
 const OrderItem = require('../models/OrderItem');
 const { sequelize } = require('../config/database');
 const User = require('../models/User');
+const { uploadBuffer } = require('../services/storage');
 
 const Razorpay = require('razorpay');
 let razorpay;
@@ -46,8 +47,7 @@ const shopController = {
             }
             let imageUrl = req.body.image;
             if (req.file) {
-                const baseUrl = `${req.protocol}://${req.get('host')}`;
-                imageUrl = `${baseUrl}/uploads/${req.file.filename}`;
+                imageUrl = await uploadBuffer(req.file.buffer, req.file.originalname, req.file.mimetype, 'products');
             }
 
             const product = await Product.create({
@@ -58,7 +58,7 @@ const shopController = {
             res.json(product);
         } catch (error) {
             console.error(error);
-            res.status(500).json({ message: 'Error creating product' });
+            res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Error creating product' });
         }
     },
 
@@ -80,8 +80,7 @@ const shopController = {
 
             let imageUrl = req.body.image;
             if (req.file) {
-                const baseUrl = `${req.protocol}://${req.get('host')}`;
-                imageUrl = `${baseUrl}/uploads/${req.file.filename}`;
+                imageUrl = await uploadBuffer(req.file.buffer, req.file.originalname, req.file.mimetype, 'products');
             } else if (imageUrl === undefined) {
                 // Only update image if provided (in body or file)
                 // If undefined, do not overwrite existing image with undefined?
@@ -97,7 +96,7 @@ const shopController = {
             res.json(product);
         } catch (error) {
             console.error(error);
-            res.status(500).json({ message: 'Error updating product' });
+            res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Error updating product' });
         }
     },
 

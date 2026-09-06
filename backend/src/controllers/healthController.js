@@ -7,8 +7,7 @@ const OpBooking = require('../models/OpBooking');
 const CommunityStat = require('../models/CommunityStat');
 const InsuranceScheme = require('../models/InsuranceScheme');
 const Notification = require('../models/Notification');
-const fs = require('fs');
-const path = require('path');
+const { uploadBuffer, deleteByUrl } = require('../services/storage');
 
 exports.createDonationRequest = async (req, res) => {
     try {
@@ -196,7 +195,12 @@ exports.addHealthRecord = async (req, res) => {
         let computedTitle = title || 'Uploaded Record';
         
         if (req.file) {
-            computedFileUrl = `/uploads/health-records/${req.file.filename}`;
+            computedFileUrl = await uploadBuffer(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype,
+                'health-records'
+            );
             if (!category) {
                  computedCategory = req.file.originalname.split('.').pop().toUpperCase();
             }
@@ -218,7 +222,7 @@ exports.addHealthRecord = async (req, res) => {
         res.status(201).json(record);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Error adding health record' });
+        res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Error adding health record' });
     }
 };
 
@@ -243,13 +247,9 @@ exports.deleteHealthRecord = async (req, res) => {
             return res.status(404).json({ message: 'Record not found' });
         }
 
-        // Delete physical file if it exists
+        // Remove the stored file (Vercel Blob); legacy /uploads paths are ignored.
         if (record.fileUrl) {
-            const fileName = record.fileUrl.split('/').pop();
-            const filePath = path.join(__dirname, '../../uploads/health-records', fileName);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
+            await deleteByUrl(record.fileUrl);
         }
 
         await record.destroy();

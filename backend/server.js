@@ -1,29 +1,25 @@
 const express = require('express');
-const { Op } = require('sequelize');
-const http = require('http');
 const path = require('path');
 const cors = require('cors');
 const dotenv = require('dotenv');
 dotenv.config();
 
 const { sequelize } = require('./src/config/database');
-const initializeWebSocket = require('./src/websocket');
 
 // Import Models for Association
-const Vehicle = require('./src/models/vehicle.model');
-const Booking = require('./src/models/booking.model');
-const User = require('./src/models/User');
-const PushSubscription = require('./src/models/PushSubscription');
-const MedicineReminder = require('./src/models/MedicineReminder');
-const webpush = require('web-push');
+require('./src/models/vehicle.model');
+require('./src/models/booking.model');
+require('./src/models/User');
+require('./src/models/PushSubscription');
+require('./src/models/MedicineReminder');
 
 // --- Shop Models & Associations ---
-const Product = require('./src/models/Product');
-const CartItem = require('./src/models/CartItem');
-const WishlistItem = require('./src/models/WishlistItem');
-const Order = require('./src/models/Order');
-const OrderItem = require('./src/models/OrderItem');
-require('./src/models/associations'); 
+require('./src/models/Product');
+require('./src/models/CartItem');
+require('./src/models/WishlistItem');
+require('./src/models/Order');
+require('./src/models/OrderItem');
+require('./src/models/associations');
 
 // --- Associations handled centrally in src/models/associations.js ---
 
@@ -43,121 +39,8 @@ const userRoutes = require('./src/routes/userRoutes');
 const vehicleRoutes = require('./src/routes/vehicleRoutes');
 const { authenticate } = require('./src/middleware/auth');
 
-const cron = require('node-cron');
-const { scrapeJobs } = require('./src/services/jobScraper.service');
-
-// Schedule job scraping to run every 12 hours (e.g., at midnight and noon)
-cron.schedule('0 0,12 * * *', () => {
-    console.log('Running scheduled job scraping...');
-    scrapeJobs();
-});
-
-// Medicine reminder cron job every minute
-cron.schedule('* * * * *', async () => {
-    try {
-        const now = new Date();
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        const currentTimeString = `${hours}:${minutes}`; // "HH:MM"
-        
-        const activeReminders = await MedicineReminder.findAll({
-            where: { isActive: true }
-        });
-        
-        console.log(`[CRON] Checking ${activeReminders.length} medicine reminders for time: ${currentTimeString}`);
-
-        for (const reminder of activeReminders) {
-            let times = reminder.scheduledTimes || [];
-            if (typeof times === 'string') {
-                try { times = JSON.parse(times); } catch(e) {}
-            }
-
-            if (times.includes(currentTimeString)) {
-                const subs = await PushSubscription.findAll({ where: { user_id: reminder.userId } });
-                if (subs.length > 0) {
-                    webpush.setVapidDetails(
-                        process.env.VAPID_SUBJECT,
-                        process.env.VAPID_PUBLIC_KEY,
-                        process.env.VAPID_PRIVATE_KEY
-                    );
-
-                    const payload = JSON.stringify({
-                        notification: {
-                            title: `Time for Medicine`,
-                            body: `It's time to take ${reminder.medicineName} (${reminder.dosage || 'prescribed dose'})`,
-                            icon: '/assets/icons/icon-192x192.png',
-                            data: {
-                                url: '/dashboard/health/medicine-reminder'
-                            }
-                        }
-                    });
-
-                    for (const sub of subs) {
-                        const pushConfig = {
-                            endpoint: sub.endpoint,
-                            keys: {
-                                auth: sub.keys_auth,
-                                p256dh: sub.keys_p256dh
-                            }
-                        };
-                        try {
-                            await webpush.sendNotification(pushConfig, payload);
-                        } catch (err) {
-                            if (err.statusCode === 410 || err.statusCode === 404) {
-                                await sub.destroy();
-                            } else {
-                                console.error('Error sending push notification:', err);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Error in medicine reminder cron:', error);
-    }
-});
-
-// Vehicle Booking Timeout Cron (Runs every minute)
-cron.schedule('* * * * *', async () => {
-    try {
-        const timeoutLimit = new Date(Date.now() - 2 * 60 * 1000); // 2 minutes ago
-
-        const expiredBookings = await Booking.findAll({
-            where: {
-                status: 'Pending',
-                createdAt: {
-                    [Op.lt]: timeoutLimit
-                }
-            }
-        });
-
-        if (expiredBookings.length > 0) {
-            console.log(`[CRON] Found ${expiredBookings.length} expired booking requests. Timing them out...`);
-            
-            for (const booking of expiredBookings) {
-                booking.status = 'Timeout';
-                await booking.save();
-
-                // Make the vehicle available again
-                const vehicle = await Vehicle.findByPk(booking.vehicleId);
-                if (vehicle) {
-                    vehicle.isAvailable = true;
-                    await vehicle.save();
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Error in vehicle booking timeout cron:', error);
-    }
-});
-
 const app = express();
-const server = http.createServer(app); // ADDED
 const PORT = process.env.PORT || 5000;
-
-// Initialize WebSocket // ADDED
-initializeWebSocket(server);
 
 // Middleware
 app.use(cors());
@@ -202,25 +85,47 @@ app.get('/', (req, res) => {
   res.send('WardConnect Backend is Running');
 });
 
-// Database Connection & Server Start
-const startServer = async () => {
-  try {
-    await sequelize.authenticate();
-    console.log('Database connected successfully.');
+// --- Long-running server only (local dev / non-serverless hosts) ---
+// On Vercel the app is imported as a serverless handler: no persistent
+// HTTP server, no WebSocket, no node-cron, no schema sync on cold start.
+// Background jobs run there via Vercel Cron (see api/cron/*).
+if (require.main === module) {
+  const http = require('http');
+  const cron = require('node-cron');
+  const initializeWebSocket = require('./src/websocket');
+  const { runMedicineReminders, runBookingTimeouts, runJobScrape } = require('./src/jobs');
 
-    // Using { alter: true } matches schemas
-    await sequelize.sync({ alter: true });
+  const server = http.createServer(app);
+  initializeWebSocket(server);
 
-    if (require.main === module) {
-      server.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT}`);
-      });
+  // Job scraping every 12 hours
+  cron.schedule('0 0,12 * * *', () => {
+    console.log('Running scheduled job scraping...');
+    runJobScrape().catch((e) => console.error('job scrape error:', e));
+  });
+
+  // Medicine reminders every minute
+  cron.schedule('* * * * *', () => {
+    runMedicineReminders({ matchExactTime: true })
+      .catch((e) => console.error('medicine reminder cron error:', e));
+  });
+
+  // Vehicle booking timeout every minute
+  cron.schedule('* * * * *', () => {
+    runBookingTimeouts()
+      .catch((e) => console.error('vehicle booking timeout cron error:', e));
+  });
+
+  (async () => {
+    try {
+      await sequelize.authenticate();
+      console.log('Database connected successfully.');
+      await sequelize.sync({ alter: true });
+      server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+    } catch (error) {
+      console.error('Unable to connect to the database:', error);
     }
-  } catch (error) {
-    console.error('Unable to connect to the database:', error);
-  }
-};
-
-startServer();
+  })();
+}
 
 module.exports = app;
